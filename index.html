@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>訂閱分帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+
+<style>
+/* 版面：存摺式。上方一行總覽，下方每位付款人一張卡，最後是單價與規則。 */
+:root {
+  --bg: #eef1ee;
+  --surface: #ffffff;
+  --ink: #18282a;
+  --muted: #5c6c6b;
+  --line: #d5dcd8;
+  --accent: #0e6a60;
+  --due: #b23f1a;
+  --due-bg: #fbe9e1;
+  --ok: #2a7548;
+  --ok-bg: #e2f1e7;
+  --font-display: "Noto Serif TC", "PMingLiU", serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111a1a; --surface: #1a2526; --ink: #e6eeec; --muted: #9aaba8; --line: #2f3d3d;
+    --accent: #5cc5b5; --due: #f09a78; --due-bg: #3a2219; --ok: #7fcf9c; --ok-bg: #1b3325;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111a1a; --surface: #1a2526; --ink: #e6eeec; --muted: #9aaba8; --line: #2f3d3d;
+  --accent: #5cc5b5; --due: #f09a78; --due-bg: #3a2219; --ok: #7fcf9c; --ok-bg: #1b3325;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+}
+main { max-width: 920px; margin: 0 auto; padding: 28px 16px 56px; display: flex; flex-direction: column; gap: 28px; }
+h1 { font-family: var(--font-display); font-size: 34px; line-height: 1.2; margin: 0; text-wrap: balance; }
+h2 { font-size: 18px; margin: 0; font-weight: 700; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px;
+  border-bottom: 2px solid var(--ink); padding-bottom: 16px; }
+.total { text-align: right; margin-left: auto; }
+.total .num { font-size: 30px; font-weight: 600; color: var(--due); display: block; line-height: 1.2; }
+.total.clear .num { color: var(--ok); }
+
+.notice { border: 1px solid var(--due); background: var(--due-bg); color: var(--ink); border-radius: 6px; padding: 12px 14px; font-size: 15px; }
+.notice ul { margin: 6px 0 0; padding-left: 20px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; align-items: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  border-top: 4px solid var(--due); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.card.clear { border-top-color: var(--ok); }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.name { font-size: 20px; font-weight: 700; }
+.pill { font-size: 13px; font-weight: 500; padding: 2px 10px; border-radius: 999px; background: var(--due-bg); color: var(--due); white-space: nowrap; }
+.clear .pill { background: var(--ok-bg); color: var(--ok); }
+.amount { font-size: 32px; font-weight: 600; line-height: 1.1; }
+.amount small { font-family: var(--font-body); font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+.block { display: flex; flex-direction: column; gap: 4px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.block-title { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.row { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; }
+.row span:first-child { min-width: 0; overflow-wrap: anywhere; }
+
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 15px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 13px; font-weight: 500; color: var(--muted); }
+td.r, th.r { text-align: right; }
+section { display: flex; flex-direction: column; gap: 12px; }
+ul.rules { margin: 0; padding-left: 20px; max-width: 65ch; }
+ul.rules li + li { margin-top: 4px; }
+</style>
+</head>
+<body>
+<main id="app"><p class="muted">讀取中…</p></main>
+<script>
+/* ===== 設定：把 Google 試算表三個分頁「發布到網路」的 CSV 連結貼在引號裡 ===== */
+var SHEET = {
+  rates:    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQRJKNR0KT_JfwczWUaJO-DwX8TJk3AtLXL4PA1VMfDl0djkuN_iR1-e668ZM20WmXdgX8Jg32FwyBS/pub?gid=2093487445&single=true&output=csv",   /* 分頁「單價」 */
+  seats:    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQRJKNR0KT_JfwczWUaJO-DwX8TJk3AtLXL4PA1VMfDl0djkuN_iR1-e668ZM20WmXdgX8Jg32FwyBS/pub?gid=361944003&single=true&output=csv",   /* 分頁「位子」 */
+  payments: "https://docs.google.com/spreadsheets/d/e/2PACX-1vQRJKNR0KT_JfwczWUaJO-DwX8TJk3AtLXL4PA1VMfDl0djkuN_iR1-e668ZM20WmXdgX8Jg32FwyBS/pub?gid=1309237944&single=true&output=csv"    /* 分頁「收款」 */
+};
+/* ===== 設定結束 ===== */
+
+/*__LOGIC_START__*/
+var MIN_CHARGE = 20;   /* 中途加入算出來不到這個金額就免收 */
+
+/* 三個連結都沒填時顯示的範例資料，欄位跟試算表一樣 */
+var DEMO = {
+  rates: [
+    { "年度": "2026", "服務": "YouTube Premium", "每人每年": "960", "方案價": "479／月", "算法": "÷ 6 人 ≈ 80／月" },
+    { "年度": "2026", "服務": "Nintendo Switch Online", "每人每年": "150", "方案價": "1,179／年", "算法": "÷ 7 人，取整數" },
+    { "年度": "2026", "服務": "Netflix", "每人每年": "1200", "方案價": "380／月", "算法": "固定 100／月" },
+    { "年度": "2026", "服務": "Surfshark", "每人每年": "100", "方案價": "825／年", "算法": "固定" },
+    { "年度": "2027", "服務": "YouTube Premium", "每人每年": "960", "方案價": "479／月", "算法": "÷ 6 人 ≈ 80／月" },
+    { "年度": "2027", "服務": "Nintendo Switch Online", "每人每年": "150", "方案價": "1,179／年", "算法": "÷ 8 人 ≈ 150" },
+    { "年度": "2027", "服務": "Netflix", "每人每年": "1200", "方案價": "380／月", "算法": "固定 100／月" },
+    { "年度": "2027", "服務": "Surfshark", "每人每年": "100", "方案價": "825／年", "算法": "固定" }
+  ],
+  seats: [
+    { "付款人": "珮珮", "服務": "YouTube Premium", "起算月": "2027-01" },
+    { "付款人": "大姊", "服務": "YouTube Premium", "起算月": "2027-01" },
+    { "付款人": "大姊", "服務": "Nintendo Switch Online", "起算月": "2027-01" },
+    { "付款人": "大姊", "服務": "Surfshark", "起算月": "2027-01" },
+    { "付款人": "玥", "服務": "Nintendo Switch Online", "起算月": "2027-01" },
+    { "付款人": "一七", "服務": "Nintendo Switch Online", "起算月": "2027-01" },
+    { "付款人": "一七", "服務": "Netflix", "起算月": "2026-11" },
+    { "付款人": "一七", "服務": "Surfshark", "起算月": "2027-01" },
+    { "付款人": "邦尼", "服務": "Nintendo Switch Online", "起算月": "2027-01" },
+    { "付款人": "姐姐", "服務": "Nintendo Switch Online", "起算月": "2027-01", "使用者": "姐姐" },
+    { "付款人": "姐姐", "服務": "Nintendo Switch Online", "起算月": "2027-01", "使用者": "兒子" },
+    { "付款人": "姐姐", "服務": "Nintendo Switch Online", "起算月": "2027-01", "使用者": "女兒" }
+  ],
+  payments: []
+};
+
+function parseCSV(text) {
+  text = String(text).replace(/^﻿/, "");
+  var rows = [], row = [], cell = "", q = false, i, c;
+  for (i = 0; i < text.length; i++) {
+    c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += c;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  if (!rows.length) return [];
+  var head = rows[0].map(function (s) { return s.trim(); });
+  return rows.slice(1).map(function (r) {
+    var o = {};
+    head.forEach(function (k, j) { if (k) o[k] = (r[j] || "").trim(); });
+    return o;
+  });
+}
+
+/* 接受 2027-01、2027/1、2027/1/1、2027年1月 */
+function ymToNum(s) {
+  var m = /(\d{4})\D+(\d{1,2})/.exec(String(s || ""));
+  if (!m || +m[2] < 1 || +m[2] > 12) return NaN;
+  return (+m[1]) * 12 + (+m[2]) - 1;
+}
+function toNum(s) { var n = parseFloat(String(s || "").replace(/[^\d.\-]/g, "")); return isNaN(n) ? 0 : n; }
+
+function build(src) {
+  var d = { services: [], rates: {}, seats: [], payments: [], warnings: [] };
+  (src.rates || []).forEach(function (r, i) {
+    var y = String(r["年度"] || "").replace(/\D/g, ""), s = r["服務"];
+    if (!y && !s) return;
+    if (y.length !== 4 || !s) { d.warnings.push("「單價」第 " + (i + 2) + " 列缺年度或服務"); return; }
+    if (d.services.indexOf(s) < 0) d.services.push(s);
+    (d.rates[y] = d.rates[y] || {})[s] = { yearly: toNum(r["每人每年"]), price: r["方案價"] || "", how: r["算法"] || "" };
+  });
+  (src.seats || []).forEach(function (r, i) {
+    var p = r["付款人"], s = r["服務"];
+    if (!p && !s) return;
+    var from = ymToNum(r["起算月"]), to = r["結束月"] ? ymToNum(r["結束月"]) : Infinity;
+    if (!p || !s || isNaN(from) || isNaN(to)) { d.warnings.push("「位子」第 " + (i + 2) + " 列缺付款人、服務，或月份看不懂"); return; }
+    if (d.services.indexOf(s) < 0) { d.warnings.push("「位子」第 " + (i + 2) + " 列的服務「" + s + "」在「單價」找不到"); return; }
+    d.seats.push({ payer: p, service: s, from: from, to: to });
+  });
+  (src.payments || []).forEach(function (r, i) {
+    var p = r["付款人"];
+    if (!p && !r["金額"]) return;
+    if (!p) { d.warnings.push("「收款」第 " + (i + 2) + " 列缺付款人"); return; }
+    d.payments.push({ payer: p, date: r["日期"] || "", amount: toNum(r["金額"]), note: r["備註"] || "" });
+  });
+  return d;
+}
+
+function compute(data) {
+  var years = Object.keys(data.rates).sort();
+  var people = {};
+  function person(name) {
+    if (!people[name]) people[name] = { name: name, lines: [], payments: [], charged: 0, paid: 0 };
+    return people[name];
+  }
+  data.seats.forEach(function (s) {
+    var p = person(s.payer);
+    years.forEach(function (y) {
+      var rate = data.rates[y][s.service];
+      if (!rate) return;
+      var ys = (+y) * 12, ye = ys + 11;
+      var months = Math.min(s.to, ye) - Math.max(s.from, ys) + 1;
+      if (months <= 0) return;
+      var amt = Math.round(rate.yearly * months / 12);
+      if (months < 12 && amt < MIN_CHARGE) amt = 0;
+      var line = null;
+      p.lines.forEach(function (l) { if (l.year === y && l.service === s.service && l.months === months) line = l; });
+      if (!line) { line = { year: y, service: s.service, months: months, count: 0, amount: 0 }; p.lines.push(line); }
+      line.count += 1; line.amount += amt;
+      p.charged += amt;
+    });
+  });
+  data.payments.forEach(function (pm) {
+    var p = person(pm.payer);
+    if (!p.lines.length && data.warnings.indexOf("「收款」的付款人「" + pm.payer + "」在「位子」找不到，請檢查暱稱有沒有打錯") < 0)
+      data.warnings.push("「收款」的付款人「" + pm.payer + "」在「位子」找不到，請檢查暱稱有沒有打錯");
+    p.payments.push(pm); p.paid += pm.amount;
+  });
+  var list = Object.keys(people).map(function (k) {
+    var p = people[k]; p.balance = p.charged - p.paid; return p;
+  });
+  list.sort(function (x, y) { return y.balance - x.balance || y.charged - x.charged; });
+  var due = 0; list.forEach(function (p) { if (p.balance > 0) due += p.balance; });
+  return { years: years, people: list, due: due };
+}
+/*__LOGIC_END__*/
+
+(function () {
+  var app = document.getElementById("app");
+  function h(tag, cls, kids) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    (kids || []).forEach(function (k) { e.appendChild(typeof k === "string" ? document.createTextNode(k) : k); });
+    return e;
+  }
+  function money(n) { return n.toLocaleString("en-US"); }
+
+  function render(src, sourceNote, demo) {
+    var data = build(src), r = compute(data);
+    app.textContent = "";
+
+    app.appendChild(h("header", "", [
+      h("div", "", [h("h1", "", ["訂閱分帳"]), h("div", "small muted", [sourceNote])]),
+      h("div", "total" + (r.due > 0 ? "" : " clear"), [
+        h("span", "small muted", ["大家還沒匯的總額"]),
+        h("span", "num", ["NT$ " + money(r.due)])
+      ])
+    ]));
+
+    if (demo) app.appendChild(h("div", "notice", ["還沒接上試算表，下面是範例資料。"]));
+    if (data.warnings.length) {
+      var ul = h("ul");
+      data.warnings.forEach(function (w) { ul.appendChild(h("li", "", [w])); });
+      app.appendChild(h("div", "notice", ["試算表有幾列讀不懂，這幾列沒有算進去：", ul]));
+    }
+
+    var cards = h("div", "cards");
+    r.people.forEach(function (p) {
+      var clear = p.balance <= 0;
+      var card = h("article", "card" + (clear ? " clear" : ""));
+      card.appendChild(h("div", "card-head", [
+        h("span", "name", [p.name]),
+        h("span", "pill", [clear ? (p.balance < 0 ? "已預付" : "已結清") : "待匯款"])
+      ]));
+      card.appendChild(h("div", "amount num", [
+        "NT$ " + money(Math.abs(p.balance)),
+        h("small", "", [clear ? (p.balance < 0 ? "多付，留到下次扣" : "不用再匯") : "現在可以匯"])
+      ]));
+      r.years.forEach(function (y) {
+        var lines = p.lines.filter(function (l) { return l.year === y; });
+        if (!lines.length) return;
+        var sum = 0; lines.forEach(function (l) { sum += l.amount; });
+        var block = h("div", "block", [h("div", "block-title", [
+          h("span", "", [y + " 年"]), h("span", "num", [money(sum)])
+        ])]);
+        lines.forEach(function (l) {
+          var label = l.service;
+          if (l.count > 1) label += " × " + l.count + " 人";
+          if (l.months < 12) label += "（" + l.months + " 個月）";
+          block.appendChild(h("div", "row", [h("span", "", [label]), h("span", "num", [l.amount ? money(l.amount) : "免收"])]));
+        });
+        card.appendChild(block);
+      });
+      var pay = h("div", "block", [h("div", "block-title", [
+        h("span", "", ["已匯"]), h("span", "num", [money(p.paid)])
+      ])]);
+      if (!p.payments.length) pay.appendChild(h("div", "row muted", [h("span", "", ["還沒有紀錄"])]));
+      p.payments.forEach(function (pm) {
+        pay.appendChild(h("div", "row", [h("span", "num", [pm.date || "—"]), h("span", "num", [money(pm.amount)])]));
+      });
+      card.appendChild(pay);
+      cards.appendChild(card);
+    });
+    app.appendChild(cards);
+
+    var latest = r.years[r.years.length - 1];
+    if (latest) {
+      var tb = h("tbody");
+      data.services.forEach(function (s) {
+        var rt = data.rates[latest][s]; if (!rt) return;
+        tb.appendChild(h("tr", "", [
+          h("td", "", [s]), h("td", "num", [rt.price]), h("td", "", [rt.how]), h("td", "r num", [money(rt.yearly)])
+        ]));
+      });
+      var tbl = h("table", "", [h("thead", "", [h("tr", "", [
+        h("th", "", ["服務"]), h("th", "", ["方案價（元）"]), h("th", "", ["算法"]), h("th", "r", ["每人每年（元）"])
+      ])]), tb]);
+      app.appendChild(h("section", "", [h("h2", "", [latest + " 年單價"]), h("div", "table-wrap", [tbl])]));
+    }
+
+    var rules = h("ul", "rules");
+    [
+      "每年 1 月收一次，一次結到年底。想提早匯也可以。",
+      "中途加入：從加入的下個月算到年底。算出來不到 " + MIN_CHARGE + " 元就免收。",
+      "服務漲價：已經收過的年度不補差額，隔年 1 月用當時價格重算。",
+      "匯款帳號不放在這裡，照舊私訊問。"
+    ].forEach(function (t) { rules.appendChild(h("li", "", [t])); });
+    app.appendChild(h("section", "", [h("h2", "", ["規則"]), rules]));
+  }
+
+  var keys = ["rates", "seats", "payments"], names = { rates: "單價", seats: "位子", payments: "收款" };
+  var set = keys.filter(function (k) { return SHEET[k]; });
+  if (!set.length) { render(DEMO, "範例資料", true); return; }
+  if (set.length < 3) {
+    app.textContent = "";
+    app.appendChild(h("div", "notice", ["試算表連結沒填完，還缺：" + keys.filter(function (k) { return !SHEET[k]; }).map(function (k) { return "「" + names[k] + "」"; }).join("、")]));
+    return;
+  }
+  Promise.all(keys.map(function (k) {
+    var url = SHEET[k] + (SHEET[k].indexOf("?") < 0 ? "?" : "&") + "_=" + Date.now();
+    return fetch(url).then(function (res) {
+      if (!res.ok) throw new Error("「" + names[k] + "」讀取失敗（HTTP " + res.status + "）");
+      return res.text();
+    }, function () { throw new Error("「" + names[k] + "」連不上，請確認這個分頁有發布到網路"); })
+    .then(function (t) {
+      if (/^\s*<(!doctype|html)/i.test(t)) throw new Error("「" + names[k] + "」的連結回傳的是網頁，不是 CSV，請確認發布格式選的是 CSV");
+      return parseCSV(t);
+    });
+  })).then(function (a) {
+    var now = new Date();
+    var hhmm = ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
+    render({ rates: a[0], seats: a[1], payments: a[2] }, "資料來自試算表，讀取於 " + hhmm + "。匯款後會記一筆。", false);
+  }).catch(function (e) {
+    app.textContent = "";
+    app.appendChild(h("div", "notice", ["現在讀不到資料：" + e.message]));
+  });
+})();
+</script>
+</body>
+</html>
