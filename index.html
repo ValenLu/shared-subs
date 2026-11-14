@@ -57,6 +57,10 @@ header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content:
 .total .num { font-size: 30px; font-weight: 600; color: var(--due); display: block; line-height: 1.2; }
 .total.clear .num { color: var(--ok); }
 
+.pick { display: flex; align-items: center; gap: 8px; }
+.pick select { font: inherit; font-family: var(--font-num); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+.pick select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .notice { border: 1px solid var(--due); background: var(--due-bg); color: var(--ink); border-radius: 6px; padding: 12px 14px; font-size: 15px; }
 .notice ul { margin: 6px 0 0; padding-left: 20px; }
 
@@ -201,7 +205,8 @@ function seatCharge(data, s, y, upto) {
 }
 
 /* nowNum：現在是第幾個月（年 × 12 + 月 − 1） */
-function compute(data, nowNum) {
+function compute(data, nowNum, todayNum) {
+  if (todayNum === undefined) todayNum = nowNum;
   var years = Object.keys(data.rates).sort();
   var people = {};
   function person(name) {
@@ -231,15 +236,16 @@ function compute(data, nowNum) {
     if (!p.seats.length && data.warnings.indexOf(w) < 0) data.warnings.push(w);
     p.payments.push(pm); p.paid += pm.amount;
   });
-  var lastEnd = years.length ? (+years[years.length - 1]) * 12 + 11 : nowNum;
+  var lastEnd = years.length ? (+years[years.length - 1]) * 12 + 11 : todayNum;
   var list = Object.keys(people).map(function (k) {
     var p = people[k];
     p.balance = p.charged - p.paid;
     p.dueNow = Math.max(0, owed(p, nowNum) - p.paid);
+    p.dueToday = Math.max(0, owed(p, todayNum) - p.paid);
     p.toYearEnd = [];
     years.forEach(function (y) {
       var ye = (+y) * 12 + 11;
-      if (ye < nowNum) return;
+      if (ye < todayNum) return;
       var tot = owed(p, ye);
       if (tot > 0) p.toYearEnd.push({ year: y, amount: Math.max(0, tot - p.paid) });
     });
@@ -251,10 +257,10 @@ function compute(data, nowNum) {
     }
     return p;
   });
-  list.sort(function (x, y) { return y.dueNow - x.dueNow || y.balance - x.balance || y.charged - x.charged; });
+  list.sort(function (x, y) { return y.dueToday - x.dueToday || y.balance - x.balance || y.charged - x.charged; });
   var dueNow = 0, dueAll = 0;
   list.forEach(function (p) { dueNow += p.dueNow; if (p.balance > 0) dueAll += p.balance; });
-  return { years: years, people: list, dueNow: dueNow, dueAll: dueAll, lastYear: years[years.length - 1] };
+  return { years: years, people: list, dueNow: dueNow, dueAll: dueAll, lastYear: years[years.length - 1], lastEnd: lastEnd };
 }
 /*__LOGIC_END__*/
 
@@ -268,31 +274,43 @@ function compute(data, nowNum) {
   }
   function money(n) { return n.toLocaleString("en-US"); }
 
-  function render(src, sourceNote, demo) {
-    var d0 = new Date(), nowNum = d0.getFullYear() * 12 + d0.getMonth();
+  var selNum = null;   /* 選單選到的月份；null 表示本月 */
+  function render(src, sourceNote, demo, refocus) {
+    var d0 = new Date(), todayNum = d0.getFullYear() * 12 + d0.getMonth();
     function ymText(n) { return Math.floor(n / 12) + " 年 " + (n % 12 + 1) + " 月"; }
-    var data = build(src), r = compute(data, nowNum);
+    function ymShort(n) { return Math.floor(n / 12) + "-" + ("0" + (n % 12 + 1)).slice(-2); }
+    var nowNum = selNum === null || selNum < todayNum ? todayNum : selNum;
+    var uptoText = nowNum === todayNum ? "到本月" : "到 " + ymText(nowNum);
+    var data = build(src), r = compute(data, nowNum, todayNum);
     app.textContent = "";
 
     app.appendChild(h("header", "", [
       h("div", "", [h("h1", "", ["訂閱分帳"]), h("div", "small muted", [sourceNote])]),
       h("div", "total" + (r.dueNow > 0 ? "" : " clear"), [
-        h("span", "small muted", ["到這個月為止，大家還沒匯的"]),
+        h("span", "small muted", [uptoText + "未匯"]),
         h("span", "num", ["NT$ " + money(r.dueNow)]),
-        h("span", "small muted", [r.lastYear ? "全部付到 " + r.lastYear + " 年底還有 NT$ " + money(r.dueAll) : ""])
+        h("span", "small muted", [r.lastYear ? "到 " + r.lastYear + " 年底 NT$ " + money(r.dueAll) : ""])
       ])
     ]));
 
-    if (demo) app.appendChild(h("div", "notice", ["還沒接上試算表，下面是範例資料。"]));
     if (data.warnings.length) {
       var ul = h("ul");
       data.warnings.forEach(function (w) { ul.appendChild(h("li", "", [w])); });
-      app.appendChild(h("div", "notice", ["試算表有幾列讀不懂，這幾列沒有算進去：", ul]));
+      app.appendChild(h("div", "notice", ["試算表以下幾列未計入：", ul]));
     }
+
+    var sel = h("select"); sel.id = "upto";
+    for (var m = todayNum; m <= Math.max(r.lastEnd, todayNum); m++) {
+      var o = h("option", "", [ymShort(m)]); o.value = String(m); if (m === nowNum) o.selected = true; sel.appendChild(o);
+    }
+    sel.addEventListener("change", function () { selNum = +sel.value; render(src, sourceNote, demo, true); });
+    var lab = h("label", "", ["付到"]); lab.htmlFor = "upto";
+    app.appendChild(h("div", "pick", [lab, sel]));
+    if (refocus) sel.focus();
 
     var cards = h("div", "cards");
     r.people.forEach(function (p) {
-      var clear = p.dueNow <= 0;
+      var clear = p.dueToday <= 0;
       var card = h("article", "card" + (clear ? " clear" : ""));
       card.appendChild(h("div", "card-head", [
         h("span", "name", [p.name]),
@@ -300,10 +318,10 @@ function compute(data, nowNum) {
       ]));
       card.appendChild(h("div", "amount num", [
         "NT$ " + money(p.dueNow),
-        h("small", "", [clear ? "到這個月為止沒有欠款" : "到這個月為止"])
+        h("small", "", [uptoText])
       ]));
       if (p.toYearEnd.length) {
-        var ahead = h("div", "block", [h("div", "block-title", [h("span", "", ["想一次多付一點"])])]);
+        var ahead = h("div", "block");
         p.toYearEnd.forEach(function (t) {
           ahead.appendChild(h("div", "row", [h("span", "", ["付到 " + t.year + " 年底"]), h("span", "num", [t.amount ? money(t.amount) : "已付清"])]));
         });
@@ -314,7 +332,7 @@ function compute(data, nowNum) {
         if (!lines.length) return;
         var sum = 0; lines.forEach(function (l) { sum += l.amount; });
         var block = h("div", "block", [h("div", "block-title", [
-          h("span", "", [y + " 年整年"]), h("span", "num", [money(sum)])
+          h("span", "", [y + " 年"]), h("span", "num", [money(sum)])
         ])]);
         lines.forEach(function (l) {
           var label = l.service;
@@ -327,7 +345,6 @@ function compute(data, nowNum) {
       var pay = h("div", "block", [h("div", "block-title", [
         h("span", "", ["已匯"]), h("span", "num", [money(p.paid)])
       ])]);
-      if (!p.payments.length) pay.appendChild(h("div", "row muted", [h("span", "", ["還沒有紀錄"])]));
       p.payments.forEach(function (pm) {
         pay.appendChild(h("div", "row", [h("span", "num", [pm.date || "—"]), h("span", "num", [money(pm.amount)])]));
       });
@@ -355,8 +372,10 @@ function compute(data, nowNum) {
 
     var rules = h("ul", "rules");
     [
-      "中途加入：從加入的下個月按月算到年底。",
-      "服務漲價：已經收過的年度不補差額，隔年 1 月用當時價格重算。"
+      "按月計費，可一次付到年底。",
+      "中途加入：下個月起算。",
+      "漲價：隔年 1 月起適用，已收的不補。",
+      "匯款帳號私訊問。"
     ].forEach(function (t) { rules.appendChild(h("li", "", [t])); });
     app.appendChild(h("section", "", [h("h2", "", ["規則"]), rules]));
   }
@@ -381,8 +400,9 @@ function compute(data, nowNum) {
     });
   })).then(function (a) {
     var now = new Date();
-    var hhmm = ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
-    render({ rates: a[0], seats: a[1], payments: a[2] }, "資料來自試算表，讀取於 " + now + "。匯款後會記一筆。", false);
+    function p2(n) { return ("0" + n).slice(-2); }
+    var stamp = now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()) + " " + p2(now.getHours()) + ":" + p2(now.getMinutes());
+    render({ rates: a[0], seats: a[1], payments: a[2] }, "讀取於 " + stamp, false);
   }).catch(function (e) {
     app.textContent = "";
     app.appendChild(h("div", "notice", ["現在讀不到資料：" + e.message]));
