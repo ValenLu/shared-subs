@@ -3,12 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
 <title>訂閱分帳</title>
+<meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
-
 <style>
 /* 版面：存摺式。上方一行總覽，下方每位付款人一張卡，最後是單價與規則。 */
 :root {
@@ -54,6 +53,7 @@ h2 { font-size: 18px; margin: 0; font-weight: 700; }
 header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px;
   border-bottom: 2px solid var(--ink); padding-bottom: 16px; }
 .total { text-align: right; margin-left: auto; }
+.total span { display: block; }
 .total .num { font-size: 30px; font-weight: 600; color: var(--due); display: block; line-height: 1.2; }
 .total.clear .num { color: var(--ok); }
 
@@ -76,7 +76,7 @@ header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content:
 .row span:first-child { min-width: 0; overflow-wrap: anywhere; }
 
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
-table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 15px; }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 15px; }
 th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 tr:last-child td { border-bottom: 0; }
 th { font-size: 13px; font-weight: 500; color: var(--muted); }
@@ -98,7 +98,7 @@ var SHEET = {
 /* ===== 設定結束 ===== */
 
 /*__LOGIC_START__*/
-var MIN_CHARGE = 20;   /* 中途加入算出來不到這個金額就免收 */
+var MIN_CHARGE = 0;    /* 中途加入算出來不到這個金額就免收 */
 
 /* 三個連結都沒填時顯示的範例資料，欄位跟試算表一樣 */
 var DEMO = {
@@ -121,7 +121,7 @@ var DEMO = {
     { "付款人": "一七", "服務": "Nintendo Switch Online", "起算月": "2027-01" },
     { "付款人": "一七", "服務": "Netflix", "起算月": "2026-11" },
     { "付款人": "一七", "服務": "Surfshark", "起算月": "2027-01" },
-    { "付款人": "邦尼", "服務": "Nintendo Switch Online", "起算月": "2027-01" },
+    { "付款人": "邦尼", "服務": "Nintendo Switch Online", "起算月": "2026-12" },
     { "付款人": "姐姐", "服務": "Nintendo Switch Online", "起算月": "2027-01", "使用者": "姐姐" },
     { "付款人": "姐姐", "服務": "Nintendo Switch Online", "起算月": "2027-01", "使用者": "兒子" },
     { "付款人": "姐姐", "服務": "Nintendo Switch Online", "起算月": "2027-01", "使用者": "女兒" }
@@ -188,42 +188,73 @@ function build(src) {
   return d;
 }
 
-function compute(data) {
+/* 一個位子在某年度、算到第 upto 個月為止的月數與金額 */
+function seatCharge(data, s, y, upto) {
+  var rate = data.rates[y][s.service];
+  if (!rate) return null;
+  var ys = (+y) * 12, ye = ys + 11;
+  var months = Math.min(s.to, ye, upto) - Math.max(s.from, ys) + 1;
+  if (months <= 0) return { months: 0, amt: 0 };
+  var amt = Math.round(rate.yearly * months / 12);
+  if (months < 12 && amt < MIN_CHARGE) amt = 0;
+  return { months: months, amt: amt };
+}
+
+/* nowNum：現在是第幾個月（年 × 12 + 月 − 1） */
+function compute(data, nowNum) {
   var years = Object.keys(data.rates).sort();
   var people = {};
   function person(name) {
-    if (!people[name]) people[name] = { name: name, lines: [], payments: [], charged: 0, paid: 0 };
+    if (!people[name]) people[name] = { name: name, seats: [], lines: [], payments: [], charged: 0, paid: 0 };
     return people[name];
+  }
+  function owed(p, upto) {
+    var t = 0;
+    p.seats.forEach(function (s) { years.forEach(function (y) { var c = seatCharge(data, s, y, upto); if (c) t += c.amt; }); });
+    return t;
   }
   data.seats.forEach(function (s) {
     var p = person(s.payer);
+    p.seats.push(s);
     years.forEach(function (y) {
-      var rate = data.rates[y][s.service];
-      if (!rate) return;
-      var ys = (+y) * 12, ye = ys + 11;
-      var months = Math.min(s.to, ye) - Math.max(s.from, ys) + 1;
-      if (months <= 0) return;
-      var amt = Math.round(rate.yearly * months / 12);
-      if (months < 12 && amt < MIN_CHARGE) amt = 0;
+      var c = seatCharge(data, s, y, Infinity);
+      if (!c || !c.months) return;
       var line = null;
-      p.lines.forEach(function (l) { if (l.year === y && l.service === s.service && l.months === months) line = l; });
-      if (!line) { line = { year: y, service: s.service, months: months, count: 0, amount: 0 }; p.lines.push(line); }
-      line.count += 1; line.amount += amt;
-      p.charged += amt;
+      p.lines.forEach(function (l) { if (l.year === y && l.service === s.service && l.months === c.months) line = l; });
+      if (!line) { line = { year: y, service: s.service, months: c.months, count: 0, amount: 0 }; p.lines.push(line); }
+      line.count += 1; line.amount += c.amt;
+      p.charged += c.amt;
     });
   });
   data.payments.forEach(function (pm) {
-    var p = person(pm.payer);
-    if (!p.lines.length && data.warnings.indexOf("「收款」的付款人「" + pm.payer + "」在「位子」找不到，請檢查暱稱有沒有打錯") < 0)
-      data.warnings.push("「收款」的付款人「" + pm.payer + "」在「位子」找不到，請檢查暱稱有沒有打錯");
+    var p = person(pm.payer), w = "「收款」的付款人「" + pm.payer + "」在「位子」找不到，請檢查暱稱有沒有打錯";
+    if (!p.seats.length && data.warnings.indexOf(w) < 0) data.warnings.push(w);
     p.payments.push(pm); p.paid += pm.amount;
   });
+  var lastEnd = years.length ? (+years[years.length - 1]) * 12 + 11 : nowNum;
   var list = Object.keys(people).map(function (k) {
-    var p = people[k]; p.balance = p.charged - p.paid; return p;
+    var p = people[k];
+    p.balance = p.charged - p.paid;
+    p.dueNow = Math.max(0, owed(p, nowNum) - p.paid);
+    p.toYearEnd = [];
+    years.forEach(function (y) {
+      var ye = (+y) * 12 + 11;
+      if (ye < nowNum) return;
+      var tot = owed(p, ye);
+      if (tot > 0) p.toYearEnd.push({ year: y, amount: Math.max(0, tot - p.paid) });
+    });
+    /* 已匯的錢蓋到哪個月 */
+    p.paidThrough = null;
+    if (p.paid > 0 && p.seats.length) {
+      var first = Infinity; p.seats.forEach(function (s) { if (s.from < first) first = s.from; });
+      for (var m = first; m <= lastEnd; m++) { if (owed(p, m) <= p.paid) p.paidThrough = m; else break; }
+    }
+    return p;
   });
-  list.sort(function (x, y) { return y.balance - x.balance || y.charged - x.charged; });
-  var due = 0; list.forEach(function (p) { if (p.balance > 0) due += p.balance; });
-  return { years: years, people: list, due: due };
+  list.sort(function (x, y) { return y.dueNow - x.dueNow || y.balance - x.balance || y.charged - x.charged; });
+  var dueNow = 0, dueAll = 0;
+  list.forEach(function (p) { dueNow += p.dueNow; if (p.balance > 0) dueAll += p.balance; });
+  return { years: years, people: list, dueNow: dueNow, dueAll: dueAll, lastYear: years[years.length - 1] };
 }
 /*__LOGIC_END__*/
 
@@ -238,14 +269,17 @@ function compute(data) {
   function money(n) { return n.toLocaleString("en-US"); }
 
   function render(src, sourceNote, demo) {
-    var data = build(src), r = compute(data);
+    var d0 = new Date(), nowNum = d0.getFullYear() * 12 + d0.getMonth();
+    function ymText(n) { return Math.floor(n / 12) + " 年 " + (n % 12 + 1) + " 月"; }
+    var data = build(src), r = compute(data, nowNum);
     app.textContent = "";
 
     app.appendChild(h("header", "", [
       h("div", "", [h("h1", "", ["訂閱分帳"]), h("div", "small muted", [sourceNote])]),
-      h("div", "total" + (r.due > 0 ? "" : " clear"), [
-        h("span", "small muted", ["大家還沒匯的總額"]),
-        h("span", "num", ["NT$ " + money(r.due)])
+      h("div", "total" + (r.dueNow > 0 ? "" : " clear"), [
+        h("span", "small muted", ["到這個月為止，大家還沒匯的"]),
+        h("span", "num", ["NT$ " + money(r.dueNow)]),
+        h("span", "small muted", [r.lastYear ? "全部付到 " + r.lastYear + " 年底還有 NT$ " + money(r.dueAll) : ""])
       ])
     ]));
 
@@ -258,22 +292,29 @@ function compute(data) {
 
     var cards = h("div", "cards");
     r.people.forEach(function (p) {
-      var clear = p.balance <= 0;
+      var clear = p.dueNow <= 0;
       var card = h("article", "card" + (clear ? " clear" : ""));
       card.appendChild(h("div", "card-head", [
         h("span", "name", [p.name]),
-        h("span", "pill", [clear ? (p.balance < 0 ? "已預付" : "已結清") : "待匯款"])
+        h("span", "pill", [clear ? (p.balance <= 0 ? "已結清" : "目前沒欠") : "待匯款"])
       ]));
       card.appendChild(h("div", "amount num", [
-        "NT$ " + money(Math.abs(p.balance)),
-        h("small", "", [clear ? (p.balance < 0 ? "多付，留到下次扣" : "不用再匯") : "現在可以匯"])
+        "NT$ " + money(p.dueNow),
+        h("small", "", [clear ? "到這個月為止沒有欠款" : "到這個月為止"])
       ]));
+      if (p.toYearEnd.length) {
+        var ahead = h("div", "block", [h("div", "block-title", [h("span", "", ["想一次多付一點"])])]);
+        p.toYearEnd.forEach(function (t) {
+          ahead.appendChild(h("div", "row", [h("span", "", ["付到 " + t.year + " 年底"]), h("span", "num", [t.amount ? money(t.amount) : "已付清"])]));
+        });
+        card.appendChild(ahead);
+      }
       r.years.forEach(function (y) {
         var lines = p.lines.filter(function (l) { return l.year === y; });
         if (!lines.length) return;
         var sum = 0; lines.forEach(function (l) { sum += l.amount; });
         var block = h("div", "block", [h("div", "block-title", [
-          h("span", "", [y + " 年"]), h("span", "num", [money(sum)])
+          h("span", "", [y + " 年整年"]), h("span", "num", [money(sum)])
         ])]);
         lines.forEach(function (l) {
           var label = l.service;
@@ -290,6 +331,7 @@ function compute(data) {
       p.payments.forEach(function (pm) {
         pay.appendChild(h("div", "row", [h("span", "num", [pm.date || "—"]), h("span", "num", [money(pm.amount)])]));
       });
+      if (p.paidThrough !== null) pay.appendChild(h("div", "row muted", [h("span", "", ["已付到 " + ymText(p.paidThrough)])]));
       card.appendChild(pay);
       cards.appendChild(card);
     });
@@ -301,19 +343,20 @@ function compute(data) {
       data.services.forEach(function (s) {
         var rt = data.rates[latest][s]; if (!rt) return;
         tb.appendChild(h("tr", "", [
-          h("td", "", [s]), h("td", "num", [rt.price]), h("td", "", [rt.how]), h("td", "r num", [money(rt.yearly)])
+          h("td", "", [s]), h("td", "num", [rt.price]), h("td", "", [rt.how]),
+          h("td", "r num", [String(Math.round(rt.yearly / 12 * 10) / 10)]), h("td", "r num", [money(rt.yearly)])
         ]));
       });
       var tbl = h("table", "", [h("thead", "", [h("tr", "", [
-        h("th", "", ["服務"]), h("th", "", ["方案價（元）"]), h("th", "", ["算法"]), h("th", "r", ["每人每年（元）"])
+        h("th", "", ["服務"]), h("th", "", ["方案價（元）"]), h("th", "", ["算法"]), h("th", "r", ["每人每月（元）"]), h("th", "r", ["每人每年（元）"])
       ])]), tb]);
       app.appendChild(h("section", "", [h("h2", "", [latest + " 年單價"]), h("div", "table-wrap", [tbl])]));
     }
 
     var rules = h("ul", "rules");
     [
-      "每年 1 月收一次，一次結到年底。想提早匯也可以。",
-      "中途加入：從加入的下個月算到年底。算出來不到 " + MIN_CHARGE + " 元就免收。",
+      "按月計費。可以每個月匯，也可以一次付到年底，匯多少都會記在這裡。",
+      "中途加入：從加入的下個月按月算到年底。",
       "服務漲價：已經收過的年度不補差額，隔年 1 月用當時價格重算。",
       "匯款帳號不放在這裡，照舊私訊問。"
     ].forEach(function (t) { rules.appendChild(h("li", "", [t])); });
