@@ -355,10 +355,8 @@ function compute(data, nowNum) {
 
     var rules = h("ul", "rules");
     [
-      "按月計費。可以每個月匯，也可以一次付到年底，匯多少都會記在這裡。",
       "中途加入：從加入的下個月按月算到年底。",
-      "服務漲價：已經收過的年度不補差額，隔年 1 月用當時價格重算。",
-      "匯款帳號不放在這裡，照舊私訊問。"
+      "服務漲價：已經收過的年度不補差額，隔年 1 月用當時價格重算。"
     ].forEach(function (t) { rules.appendChild(h("li", "", [t])); });
     app.appendChild(h("section", "", [h("h2", "", ["規則"]), rules]));
   }
@@ -384,7 +382,7 @@ function compute(data, nowNum) {
   })).then(function (a) {
     var now = new Date();
     var hhmm = ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
-    render({ rates: a[0], seats: a[1], payments: a[2] }, "資料來自試算表，讀取於 " + hhmm + "。匯款後會記一筆。", false);
+    render({ rates: a[0], seats: a[1], payments: a[2] }, "資料來自試算表，讀取於 " + now + "。匯款後會記一筆。", false);
   }).catch(function (e) {
     app.textContent = "";
     app.appendChild(h("div", "notice", ["現在讀不到資料：" + e.message]));
