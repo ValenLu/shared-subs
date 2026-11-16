@@ -53,6 +53,7 @@ h2 { font-size: 18px; margin: 0; font-weight: 700; }
 header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px;
   border-bottom: 2px solid var(--ink); padding-bottom: 16px; }
 
+.stack { display: flex; flex-direction: column; gap: 28px; }
 .pick { display: flex; align-items: center; gap: 8px; }
 .pick select { font: inherit; font-family: var(--font-num); color: var(--ink); background: var(--surface);
   border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
@@ -268,13 +269,11 @@ function compute(data, nowNum, todayNum) {
   function money(n) { return n.toLocaleString("en-US"); }
 
   var selNum = null;   /* 選單選到的月份；null 表示本月 */
-  function render(src, sourceNote, demo, refocus) {
+  function render(src, sourceNote, demo) {
     var d0 = new Date(), todayNum = d0.getFullYear() * 12 + d0.getMonth();
     function ymText(n) { return Math.floor(n / 12) + " 年 " + (n % 12 + 1) + " 月"; }
     function ymShort(n) { return Math.floor(n / 12) + "-" + ("0" + (n % 12 + 1)).slice(-2); }
-    var nowNum = selNum === null || selNum < todayNum ? todayNum : selNum;
-    var uptoText = "付到 " + ymText(nowNum);
-    var data = build(src), r = compute(data, nowNum, todayNum);
+    var data = build(src), r = compute(data, todayNum, todayNum);
     app.textContent = "";
 
     app.appendChild(h("header", "", [
@@ -289,13 +288,20 @@ function compute(data, nowNum, todayNum) {
 
     var sel = h("select"); sel.id = "upto";
     for (var m = todayNum; m <= Math.max(r.lastEnd, todayNum); m++) {
-      var o = h("option", "", [ymShort(m)]); o.value = String(m); if (m === nowNum) o.selected = true; sel.appendChild(o);
+      var o = h("option", "", [ymShort(m)]); o.value = String(m); sel.appendChild(o);
     }
-    sel.addEventListener("change", function () { selNum = +sel.value; render(src, sourceNote, demo, true); });
+    /* 選單只建一次；換月份時只重畫下面的內容，選單不重建也不重新取得焦點 */
+    sel.addEventListener("change", function () { selNum = +sel.value; draw(); });
     var lab = h("label", "", ["付到"]); lab.htmlFor = "upto";
     app.appendChild(h("div", "pick", [lab, sel]));
-    if (refocus) sel.focus();
+    var body = h("div", "stack");
+    app.appendChild(body);
 
+    function draw() {
+    var nowNum = selNum === null || selNum < todayNum ? todayNum : selNum;
+    var uptoText = "付到 " + ymText(nowNum);
+    r = compute(data, nowNum, todayNum);
+    body.textContent = "";
     var cards = h("div", "cards");
     r.people.forEach(function (p) {
       var card = h("article", "card");
@@ -337,7 +343,7 @@ function compute(data, nowNum, todayNum) {
       card.appendChild(pay);
       cards.appendChild(card);
     });
-    app.appendChild(cards);
+    body.appendChild(cards);
 
     var latest = r.years[r.years.length - 1];
     if (latest) {
@@ -352,7 +358,7 @@ function compute(data, nowNum, todayNum) {
       var tbl = h("table", "", [h("thead", "", [h("tr", "", [
         h("th", "", ["服務"]), h("th", "", ["方案價（元）"]), h("th", "", ["算法"]), h("th", "r", ["每人每月（元）"]), h("th", "r", ["每人每年（元）"])
       ])]), tb]);
-      app.appendChild(h("section", "", [h("h2", "", [latest + " 年單價"]), h("div", "table-wrap", [tbl])]));
+      body.appendChild(h("section", "", [h("h2", "", [latest + " 年單價"]), h("div", "table-wrap", [tbl])]));
     }
 
     var rules = h("ul", "rules");
@@ -361,7 +367,9 @@ function compute(data, nowNum, todayNum) {
       "中途加入：下個月起算。",
       "漲價：隔年 1 月起適用，已收的不補。"
     ].forEach(function (t) { rules.appendChild(h("li", "", [t])); });
-    app.appendChild(h("section", "", [h("h2", "", ["規則"]), rules]));
+    body.appendChild(h("section", "", [h("h2", "", ["規則"]), rules]));
+    }
+    draw();
   }
 
   var keys = ["rates", "seats", "payments"], names = { rates: "單價", seats: "位子", payments: "收款" };
