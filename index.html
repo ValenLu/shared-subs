@@ -372,10 +372,9 @@ function compute(data, nowNum, todayNum) {
 
     var rules = h("ul", "rules");
     [
-      "按月計費，可一次付到年底。",
+      "可自行選擇付到哪個月分。",
       "中途加入：下個月起算。",
-      "漲價：隔年 1 月起適用，已收的不補。",
-      "匯款帳號私訊問。"
+      "漲價：隔年 1 月起適用，已收的不補。"
     ].forEach(function (t) { rules.appendChild(h("li", "", [t])); });
     app.appendChild(h("section", "", [h("h2", "", ["規則"]), rules]));
   }
