@@ -52,10 +52,6 @@ h2 { font-size: 18px; margin: 0; font-weight: 700; }
 
 header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px;
   border-bottom: 2px solid var(--ink); padding-bottom: 16px; }
-.total { text-align: right; margin-left: auto; }
-.total span { display: block; }
-.total .num { font-size: 30px; font-weight: 600; color: var(--due); display: block; line-height: 1.2; }
-.total.clear .num { color: var(--ok); }
 
 .pick { display: flex; align-items: center; gap: 8px; }
 .pick select { font: inherit; font-family: var(--font-num); color: var(--ink); background: var(--surface);
@@ -66,12 +62,10 @@ header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content:
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; align-items: start; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
-  border-top: 4px solid var(--due); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.card.clear { border-top-color: var(--ok); }
+  border-top: 4px solid var(--accent); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .name { font-size: 20px; font-weight: 700; }
-.pill { font-size: 13px; font-weight: 500; padding: 2px 10px; border-radius: 999px; background: var(--due-bg); color: var(--due); white-space: nowrap; }
-.clear .pill { background: var(--ok-bg); color: var(--ok); }
+.pill { font-size: 13px; font-weight: 500; padding: 2px 10px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); white-space: nowrap; }
 .amount { font-size: 32px; font-weight: 600; line-height: 1.1; }
 .amount small { font-family: var(--font-body); font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 6px; }
 .block { display: flex; flex-direction: column; gap: 4px; border-top: 1px dashed var(--line); padding-top: 10px; }
@@ -257,7 +251,6 @@ function compute(data, nowNum, todayNum) {
     }
     return p;
   });
-  list.sort(function (x, y) { return y.dueToday - x.dueToday || y.balance - x.balance || y.charged - x.charged; });
   var dueNow = 0, dueAll = 0;
   list.forEach(function (p) { dueNow += p.dueNow; if (p.balance > 0) dueAll += p.balance; });
   return { years: years, people: list, dueNow: dueNow, dueAll: dueAll, lastYear: years[years.length - 1], lastEnd: lastEnd };
@@ -280,17 +273,12 @@ function compute(data, nowNum, todayNum) {
     function ymText(n) { return Math.floor(n / 12) + " 年 " + (n % 12 + 1) + " 月"; }
     function ymShort(n) { return Math.floor(n / 12) + "-" + ("0" + (n % 12 + 1)).slice(-2); }
     var nowNum = selNum === null || selNum < todayNum ? todayNum : selNum;
-    var uptoText = nowNum === todayNum ? "到本月" : "到 " + ymText(nowNum);
+    var uptoText = "付到 " + ymText(nowNum);
     var data = build(src), r = compute(data, nowNum, todayNum);
     app.textContent = "";
 
     app.appendChild(h("header", "", [
-      h("div", "", [h("h1", "", ["訂閱分帳"]), h("div", "small muted", [sourceNote])]),
-      h("div", "total" + (r.dueNow > 0 ? "" : " clear"), [
-        h("span", "small muted", [uptoText + "未匯"]),
-        h("span", "num", ["NT$ " + money(r.dueNow)]),
-        h("span", "small muted", [r.lastYear ? "到 " + r.lastYear + " 年底 NT$ " + money(r.dueAll) : ""])
-      ])
+      h("div", "", [h("h1", "", ["訂閱分帳"]), h("div", "small muted", [sourceNote])])
     ]));
 
     if (data.warnings.length) {
@@ -310,12 +298,10 @@ function compute(data, nowNum, todayNum) {
 
     var cards = h("div", "cards");
     r.people.forEach(function (p) {
-      var clear = p.dueToday <= 0;
-      var card = h("article", "card" + (clear ? " clear" : ""));
-      card.appendChild(h("div", "card-head", [
-        h("span", "name", [p.name]),
-        h("span", "pill", [clear ? (p.balance <= 0 ? "已結清" : "目前沒欠") : "待匯款"])
-      ]));
+      var card = h("article", "card");
+      var head = h("div", "card-head", [h("span", "name", [p.name])]);
+      if (p.paidThrough !== null) head.appendChild(h("span", "pill", ["已付到 " + ymText(p.paidThrough)]));
+      card.appendChild(head);
       card.appendChild(h("div", "amount num", [
         "NT$ " + money(p.dueNow),
         h("small", "", [uptoText])
@@ -348,7 +334,6 @@ function compute(data, nowNum, todayNum) {
       p.payments.forEach(function (pm) {
         pay.appendChild(h("div", "row", [h("span", "num", [pm.date || "—"]), h("span", "num", [money(pm.amount)])]));
       });
-      if (p.paidThrough !== null) pay.appendChild(h("div", "row muted", [h("span", "", ["已付到 " + ymText(p.paidThrough)])]));
       card.appendChild(pay);
       cards.appendChild(card);
     });
